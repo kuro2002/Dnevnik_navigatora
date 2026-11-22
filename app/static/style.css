@@ -1,0 +1,42 @@
+:root{--bg:#f7f6f3;--card:#fff;--ink:#22252a;--muted:#6b7078;--line:#e3e1dc;--accent:#2f5d62;--accent-soft:#e4eeee;--warn:#a3542b;--warn-soft:#f8ebe3;--ok:#3d6b3a;--ok-soft:#e6f0e3}
+@media (prefers-color-scheme:dark){:root{--bg:#17191c;--card:#202328;--ink:#e6e6e3;--muted:#9aa0a8;--line:#33373d;--accent:#7fb3b8;--accent-soft:#243437;--warn:#e0a07c;--warn-soft:#3a2a21;--ok:#9cc795;--ok-soft:#243323}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+header.top{display:flex;gap:16px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5}
+header.top .brand{font-weight:600;text-decoration:none;color:var(--ink)}
+header.top nav{display:flex;gap:14px;flex:1}
+main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:22px;margin:4px 0 12px}h2{font-size:18px;margin:22px 0 10px}h3{font-size:15px;margin:14px 0 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.stat b{display:block;font-size:24px}.stat span{color:var(--muted);font-size:13px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:500}
+.muted{color:var(--muted)}.small{font-size:13px}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--accent-soft);color:var(--accent)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.ok{background:var(--ok-soft);color:var(--ok)}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 3px}
+input[type=text],input[type=date],input[type=number],input[type=password],select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{min-height:70px;resize:vertical}textarea.tall{min-height:260px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+.checks{display:flex;flex-wrap:wrap;gap:6px 14px}.checks label{display:flex;gap:5px;align-items:center;color:var(--ink);margin:0;font-size:14px}
+button,.btn{display:inline-block;padding:7px 14px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;cursor:pointer;text-decoration:none}
+@media (prefers-color-scheme:dark){button,.btn{color:#111}}
+button.ghost,.btn.ghost{background:transparent;color:var(--accent)}
+button.danger{background:transparent;border-color:var(--warn);color:var(--warn)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row.end{justify-content:flex-end}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
+.tabs a{padding:8px 12px;text-decoration:none;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
+.tabs a.on{color:var(--ink);border-color:var(--accent)}
+details>summary{cursor:pointer;color:var(--accent)}
+.obs{border-left:3px solid var(--line);padding:4px 10px;margin:8px 0}
+.obs.strength,.obs.growth{border-color:var(--ok)}.obs.difficulty{border-color:var(--warn)}
+.obs dt{font-size:12px;color:var(--muted);margin-top:4px}.obs dd{margin:0}
+.cols{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.error{background:var(--warn-soft);color:var(--warn);padding:8px 12px;border-radius:7px;margin-bottom:12px}
+.note{background:var(--accent-soft);padding:8px 12px;border-radius:7px;margin:8px 0;font-size:14px}
+pre.export{white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);padding:10px;border-radius:7px;font-size:12px}
+.timeline li{margin:4px 0}
+@media print{header.top,.noprint{display:none!important}body{background:#fff;color:#000}.card{border:none;padding:0}main{max-width:none}}

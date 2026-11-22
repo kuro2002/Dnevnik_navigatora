@@ -1,0 +1,41 @@
+{% macro opt(options, current) %}{% for k, v in options.items() %}<option value="{{ k }}" {% if k == current %}selected{% endif %}>{{ v }}</option>{% endfor %}{% endmacro %}
+
+{% macro status_pill(st) %}<span class="pill {% if st in ('error',) %}warn{% elif st in ('done','checked') %}ok{% endif %}">{{ ANALYSIS_STATUSES.get(st) or REVIEW_STATUSES.get(st) or st }}</span>{% endmacro %}
+
+{% macro observation(o) %}
+<div class="obs {{ o.kind or '' }}">
+  {% if o.kind %}<span class="pill {% if o.kind == 'difficulty' %}warn{% elif o.kind in ('strength','growth') %}ok{% endif %}">{{ {'strength':'сильное решение','difficulty':'трудный момент','growth':'рост','neutral':'наблюдение'}.get(o.kind, o.kind) }}</span>{% endif %}
+  <dl>
+    <dt>Наблюдение</dt><dd>{{ o.observation }}</dd>
+    {% if o.evidence %}<dt>Фрагмент</dt><dd><i>{{ o.evidence }}</i></dd>{% endif %}
+    {% if o.possible_meaning %}<dt>Возможное значение</dt><dd>{{ o.possible_meaning }}</dd>{% endif %}
+    {% if o.alternative %}<dt>Альтернативное объяснение</dt><dd>{{ o.alternative }}</dd>{% endif %}
+    {% if o.question %}<dt>Вопрос для проверки</dt><dd>{{ o.question }}</dd>{% endif %}
+  </dl>
+</div>
+{% endmacro %}
+
+{% macro list_block(title, items) %}{% if items %}<h3>{{ title }}</h3><ul>{% for x in items %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}{% endmacro %}
+
+{% macro session_result(r, short=False) %}
+{% if r.synopsis %}<h3>Синопсис</h3><p>{{ r.synopsis }}</p>{% endif %}
+{{ list_block('Уточняющие вопросы', r.clarifying_questions) }}
+{% if r.observations %}<h3>Обратная связь психологу</h3>{% for o in r.observations %}{{ observation(o) }}{% endfor %}{% endif %}
+{% if r.methods_observed %}<h3>Методы, замеченные в записи</h3><ul>{% for m in r.methods_observed %}<li>{{ m.method }}{% if m.evidence %} — <i>{{ m.evidence }}</i>{% endif %}</li>{% endfor %}</ul>{% endif %}
+{% if r.marker_evidence %}<h3>Данные по маркерам</h3><ul>{% for m in r.marker_evidence %}<li><b>{{ m.marker }}</b>{% if m.value %}: {{ m.value }}{% endif %} — <i>{{ m.evidence }}</i></li>{% endfor %}</ul>{% endif %}
+{{ list_block('Пробелы в записи', r.gaps) }}
+{{ list_block('Противоречия', r.contradictions) }}
+{{ list_block('Возможные ошибки распознавания', r.asr_issues) }}
+{% if not short %}<h3>Предложенные поля</h3><table>{% for k, label in SESSION_TEXT_FIELDS.items() %}{% if r.fields.get(k) %}<tr><th style="width:30%">{{ label }}</th><td>{{ r.fields[k] }}</td></tr>{% endif %}{% endfor %}</table>{% endif %}
+{% endmacro %}
+
+{% macro dynamics_result(r) %}
+{% if r.summary %}<p>{{ r.summary }}</p>{% endif %}
+{% if r.by_goal %}<h3>По целям клиента</h3><table><tr><th>Цель</th><th>Направление</th><th>Изменения и основания</th><th>Что противоречит</th></tr>
+{% for g in r.by_goal %}<tr><td>{{ g.goal }}</td><td><span class="pill {% if 'ухудш' in g.direction %}warn{% elif 'улучш' in g.direction %}ok{% endif %}">{{ g.direction }}</span></td><td>{{ g.changes }}{% if g.evidence %}<br><i class="small">{{ g.evidence }}</i>{% endif %}</td><td>{{ g.contrary }}</td></tr>{% endfor %}</table>{% endif %}
+{% if r.interaction %}<h3>Взаимодействие и согласованность работы</h3>{% for o in r.interaction %}{{ observation(o) }}{% endfor %}{% endif %}
+{% if r.psychologist_skills %}<h3>Действия и навыки психолога</h3>{% for o in r.psychologist_skills %}{{ observation(o) }}{% endfor %}{% endif %}
+{{ list_block('Признаки ухудшения или застоя', r.regress_or_risks) }}
+{{ list_block('Не хватает данных', r.data_gaps) }}
+{{ list_block('Вопросы на супервизию', r.supervision_questions) }}
+{% endmacro %}

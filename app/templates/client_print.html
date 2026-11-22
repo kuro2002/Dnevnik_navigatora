@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import dynamics_result %}
+{% block title %}{{ client.code }} — материалы для супервизии{% endblock %}
+{% block content %}
+<form class="card noprint row" method="get">
+  <label style="margin:0">С</label><input type="date" name="date_from" value="{{ d1 or '' }}" style="width:auto">
+  <label style="margin:0">по</label><input type="date" name="date_to" value="{{ d2 or '' }}" style="width:auto">
+  <label style="margin:0"><input type="checkbox" name="transcripts" value="1" {% if transcripts %}checked{% endif %}> с транскриптами</label>
+  <button class="ghost">Показать</button><button type="button" onclick="window.print()">Печать / PDF</button>
+</form>
+<h1>{{ client.code }} · {{ CLIENT_TYPES.get(client.client_type) }}</h1>
+<p class="muted">Сформировано {{ today|d }}{% if d1 or d2 %} · период {{ d1|d }} — {{ d2|d }}{% endif %} · статус: {{ CLIENT_STATUSES.get(client.status) }} · {{ PHASES.get(client.phase) }}</p>
+{% if client.context %}<p><b>Контекст:</b> {{ client.context }}</p>{% endif %}
+{% if client.contract %}<p><b>Контракт:</b> {{ client.contract }}</p>{% endif %}
+<h2>Запросы и цели</h2>
+<ul>{% for g in client.goals %}<li><b>{{ WHO.get(g.who) }}:</b> «{{ g.words }}»{% if g.process %} — {{ g.process }}{% endif %} <span class="muted">({{ GOAL_STATUSES.get(g.status) }})</span></li>{% endfor %}</ul>
+{% if client.hypotheses %}<h2>Рабочие гипотезы</h2>
+<ul>{% for h in client.hypotheses %}<li>{{ h.text }} <span class="muted">({{ HYPOTHESIS_STATUSES.get(h.status) }})</span>{% if h.grounds %}<br><span class="small">Основания: {{ h.grounds }}</span>{% endif %}{% if h.contrary %}<br><span class="small">Противоречит: {{ h.contrary }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+{% if client.markers %}<h2>Маркеры</h2>
+<table><tr><th>Маркер</th><th>Как измеряю</th><th>Замеры</th></tr>
+{% for m in client.markers %}<tr><td>{{ m.name }}</td><td class="small">{{ m.how }}</td><td class="small">{% for ms in m.measurements %}{{ ms.measured_on|d }}: <b>{{ ms.value|round(1) }}</b>{% if not loop.last %} → {% endif %}{% endfor %}</td></tr>{% endfor %}</table>{% endif %}
+<h2>Сессии</h2>
+{% for x in sessions %}
+<div class="card">
+  <h3>№{{ x.number }} · {{ x.session_date|d }}{% if x.method_labels %} · {{ x.method_labels }}{% endif %} <span class="pill">{{ REVIEW_STATUSES.get(x.review_status) }}</span></h3>
+  {% if x.synopsis %}<p>{{ x.synopsis }}</p>{% endif %}
+  <table>{% for key, label in SESSION_TEXT_FIELDS.items() %}{% if x[key] %}<tr><th style="width:30%">{{ label }}</th><td>{{ x[key] }}</td></tr>{% endif %}{% endfor %}
+  {% for key, label in SESSION_SELF_FIELDS.items() %}{% if x[key] %}<tr><th>{{ label }}</th><td>{{ x[key] }}</td></tr>{% endif %}{% endfor %}</table>
+  {% if transcripts and x.transcript %}<details open><summary>Транскрипт</summary><pre class="export" style="max-height:none">{{ x.transcript }}</pre></details>{% endif %}
+</div>
+{% else %}<p class="muted">Нет сессий за период.</p>{% endfor %}
+{% endblock %}

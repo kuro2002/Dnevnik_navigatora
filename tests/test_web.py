@@ -1,0 +1,194 @@
+import json
+
+from fastapi.testclient import TestClient
+
+from app import jobs
+from app.main import create_app
+from tests.conftest import FakeBackend
+
+SESSION_ANSWER = {
+    "synopsis": "Клиентка рассказала о неделе.",
+    "fields": {"focus": "Привязанность", "agreements": "Вести дневник"},
+    "observations": [{"kind": "difficulty", "observation": "Психолог быстро предложила решение",
+                      "evidence": "«Давайте попробуем...»", "possible_meaning": "спешка",
+                      "alternative": "клиентка сама просила совет", "question": "Что было бы, если подождать?"}],
+    "clarifying_questions": ["Какая шкала была названа в начале?"],
+}
+
+
+def make_client(c, code="К-014"):
+    r = c.post("/clients", data={"code": code, "client_type": "adult", "status": "active",
+                                 "goal_words": "Перестать думать о бывшем",
+                                 "goal_process": "Ослабить эмоциональную зависимость"},
+               follow_redirects=False)
+    assert r.status_code == 303, r.text
+    return int(r.headers["location"].rsplit("/", 1)[1])
+
+
+def make_session(c, cid, **extra):
+    data = {"session_date": "2026-09-21", "number": "1", "methods": ["act", "hypnosis"],
+            "reflection": "торопилась", "transcript": "Психолог: Здравствуйте.\nКлиент: Привет."}
+    data.update(extra)
+    r = c.post(f"/clients/{cid}/sessions", data=data, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    return int(r.headers["location"].rsplit("/", 1)[1])
+
+
+def test_requires_login():
+    app = create_app(start_background=False)
+    with TestClient(app) as anon:
+        r = anon.get("/", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login"
+        assert anon.post("/login", data={"password": "wrong"}).status_code == 401
+
+
+def test_client_card_flow(client):
+    cid = make_client(client)
+    page = client.get(f"/clients/{cid}").text
+    assert "К-014" in page and "Перестать думать о бывшем" in page
+    # дубликат шифра
+    r = client.post("/clients", data={"code": "К-014"})
+    assert "уже занят" in r.text
+    # шифр с пробелом не принимается
+    assert "без пробелов" in client.post("/clients", data={"code": "Иван Петров"}).text
+    # гипотеза и смена фазы попадают в карточку и хронологию
+    client.post(f"/clients/{cid}/hypotheses", data={"text": "Страх одиночества", "grounds": "слова о пустоте"})
+    client.post(f"/clients/{cid}/edit", data={"phase": "resource", "status": "active", "client_type": "adult"})
+    assert "Страх одиночества" in client.get(f"/clients/{cid}").text
+    assert "Фаза 2" in client.get(f"/clients/{cid}?tab=timeline").text
+
+
+def test_markers_history(client):
+    cid = make_client(client)
+    client.post(f"/clients/{cid}/markers", data={"name": "Эмоциональная зависимость", "how": "шкала 0–10",
+                                                 "start_value": "8", "start_date": "2026-09-01"})
+    page = client.get(f"/clients/{cid}?tab=markers").text
+    assert "Эмоциональная зависимость" in page
+    from app.db import SessionLocal
+    from app.models import Marker
+    with SessionLocal() as db:
+        mid = db.query(Marker).one().id
+    client.post(f"/markers/{mid}/measure", data={"measured_on": "2026-09-21", "value": "5,5", "comment": "пример"})
+    page = client.get(f"/clients/{cid}?tab=markers").text
+    assert "8.0" in page and "5.5" in page and "<polyline" in page
+
+
+def test_session_requires_explicit_date(client):
+    cid = make_client(client)
+    r = client.post(f"/clients/{cid}/sessions", data={"transcript": "текст"})
+    assert "Укажите дату встречи" in r.text
+
+
+def test_session_analysis_and_apply(client, monkeypatch):
+    cid = make_client(client)
+    sid = make_session(client, cid)
+    fake = FakeBackend([json.dumps(SESSION_ANSWER, ensure_ascii=False)])
+    monkeypatch.setattr(jobs, "get_backend", lambda name: fake)
+    r = client.post(f"/sessions/{sid}/analyze/ollama", follow_redirects=False)
+    assert r.status_code == 303
+    page = client.get(f"/sessions/{sid}").text
+    assert "Психолог быстро предложила решение" in page
+    assert "Какая шкала была названа" in page
+
+    from app.db import SessionLocal
+    from app.models import Analysis, Session
+    with SessionLocal() as db:
+        aid = db.query(Analysis).one().id
+    client.post(f"/analyses/{aid}/apply", data={"take": ["synopsis", "focus"]})
+    with SessionLocal() as db:
+        s = db.get(Session, sid)
+        assert s.focus == "Привязанность"
+        assert s.synopsis.startswith("Клиентка")
+        assert s.agreements == ""  # не выбрано — не перенесено
+        assert s.review_status == "review"
+        assert s.reflection == "торопилась"  # поле психолога не тронуто
+
+
+def test_claude_manual_roundtrip(client):
+    cid = make_client(client)
+    sid = make_session(client, cid)
+    r = client.post(f"/sessions/{sid}/analyze/claude", follow_redirects=False)
+    url = r.headers["location"]
+    page = client.get(url).text
+    assert "=== ИНСТРУКЦИЯ ===" in page and "К-014" in page and "Здравствуйте" in page
+    bad = client.post(url + "/import", data={"answer": "извините, не могу"})
+    assert "Не удалось прочитать ответ" in bad.text
+    answer = "Вот разбор:\n```json\n" + json.dumps(SESSION_ANSWER, ensure_ascii=False) + "\n```"
+    client.post(url + "/import", data={"answer": answer})
+    page = client.get(url).text
+    assert "Перенести в запись сессии" in page and "Клиентка рассказала" in page
+
+
+def test_analyzer_unavailable_shows_error(client, monkeypatch):
+    from app.analysis.backends import OllamaBackend
+    import httpx
+
+    def handler(req):
+        raise httpx.ConnectError("off")
+    monkeypatch.setattr(jobs, "get_backend",
+                        lambda name: OllamaBackend(url="http://pc:1", client=httpx.Client(transport=httpx.MockTransport(handler))))
+    cid = make_client(client)
+    sid = make_session(client, cid)
+    client.post(f"/sessions/{sid}/analyze/ollama")
+    assert "Включён ли компьютер" in client.get(f"/sessions/{sid}").text
+
+
+def test_dynamics(client, monkeypatch):
+    cid = make_client(client)
+    sid = make_session(client, cid)
+    client.post(f"/sessions/{sid}", data={"session_date": "2026-09-21", "focus": "Привязанность",
+                                          "review_status": "checked"})
+    fake = FakeBackend([json.dumps({"summary": "Есть движение", "by_goal": [
+        {"goal": "Перестать думать о бывшем", "direction": "улучшение", "changes": "реже думает",
+         "evidence": "сессия 1"}]}, ensure_ascii=False)])
+    monkeypatch.setattr(jobs, "get_backend", lambda name: fake)
+    client.post(f"/clients/{cid}/dynamics/yandex")
+    page = client.get(f"/clients/{cid}?tab=dynamics").text
+    assert "Есть движение" in page and "реже думает" in page
+    assert "Привязанность" in fake.calls[0][1]
+
+
+def test_audio_upload_and_transcription(client, monkeypatch):
+    cid = make_client(client)
+    calls = []
+
+    def fake_transcriber(path):
+        calls.append(path)
+        return "Клиент: расшифрованный текст"
+    orig = jobs.run_transcription
+    monkeypatch.setattr(jobs, "run_transcription", lambda aid: orig(aid, transcriber=fake_transcriber))
+    r = client.post(f"/clients/{cid}/sessions", data={"session_date": "2026-09-21"},
+                    files={"audio": ("voice.ogg", b"OggS....", "audio/ogg")}, follow_redirects=False)
+    sid = int(r.headers["location"].rsplit("/", 1)[1])
+    assert calls and calls[0].suffix == ".ogg"
+    page = client.get(f"/sessions/{sid}").text
+    assert "расшифрованный текст" in page and "Готово" in page
+
+
+def test_audio_waits_when_pc_offline(client, monkeypatch):
+    from app.transcription import TranscriberUnavailable
+    cid = make_client(client)
+
+    def offline(path):
+        raise TranscriberUnavailable("Компьютер с транскрибатором недоступен, попробую позже.")
+    orig = jobs.run_transcription
+    monkeypatch.setattr(jobs, "run_transcription", lambda aid: orig(aid, transcriber=offline))
+    r = client.post(f"/clients/{cid}/sessions", data={"session_date": "2026-09-21"},
+                    files={"audio": ("voice.mp3", b"ID3", "audio/mpeg")}, follow_redirects=False)
+    sid = int(r.headers["location"].rsplit("/", 1)[1])
+    assert "Ждёт компьютер" in client.get(f"/sessions/{sid}").text
+
+
+def test_print_and_dashboard(client):
+    cid = make_client(client)
+    make_session(client, cid)
+    assert "сессий всего" in client.get("/").text
+    page = client.get(f"/clients/{cid}/print?transcripts=1").text
+    assert "Здравствуйте" in page and "Перестать думать о бывшем" in page
+
+
+def test_delete_client_needs_code(client):
+    cid = make_client(client)
+    assert client.post(f"/clients/{cid}/delete", data={"confirm": "нет"}).status_code == 400
+    client.post(f"/clients/{cid}/delete", data={"confirm": "К-014"})
+    assert client.get(f"/clients/{cid}").status_code == 404

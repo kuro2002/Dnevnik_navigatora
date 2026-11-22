@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, session_result, dynamics_result %}
+{% block content %}
+{% if a.session %}<p><a href="/sessions/{{ a.session.id }}">← {{ a.client.code }} · сессия №{{ a.session.number }}</a></p>
+{% else %}<p><a href="/clients/{{ a.client.id }}?tab=dynamics">← {{ a.client.code }} · динамика</a></p>{% endif %}
+<div class="row" style="justify-content:space-between">
+  <h1>{% if a.kind == 'session' %}Разбор сессии{% else %}Динамика{% endif %} · {{ ANALYZERS.get(a.analyzer) }}</h1>
+  {{ status_pill(a.status) }}
+</div>
+<p class="small muted">{{ a.model }} · версия инструкции {{ a.prompt_version or '—' }} · {{ a.created_at|dt }}</p>
+{% if a.error %}<div class="error">{{ a.error }}</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+{% if a.status in ('queued','running') %}<div class="note">Модель работает. Обновите страницу через минуту-две.</div>{% endif %}
+{% if a.status == 'error' and a.analyzer != 'claude' %}<form method="post" action="/analyses/{{ a.id }}/retry"><button>Повторить</button></form>{% endif %}
+
+{% if export is not none and not result %}
+<div class="card">
+  <h2 style="margin-top:0">1. Скопируйте текст для Claude</h2>
+  <p class="small">Вставьте его в отдельную ветку проекта. В тексте только шифр клиента, но транскрипт уходит в Claude целиком.</p>
+  <pre class="export" id="export">{{ export }}</pre>
+  <p class="row"><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('export').innerText).then(()=>{this.textContent='Скопировано'})">Скопировать</button>
+  <span class="small muted">{{ export|length }} символов</span></p>
+</div>
+<form method="post" action="/analyses/{{ a.id }}/import" class="card">
+  <h2 style="margin-top:0">2. Вставьте ответ Claude</h2>
+  <textarea name="answer" class="tall" required></textarea>
+  <p><button>Сохранить разбор</button></p>
+</form>
+{% endif %}
+
+{% if result %}
+<div class="card">
+{% if a.kind == 'session' %}{{ session_result(result, short=True) }}{% else %}{{ dynamics_result(result) }}{% endif %}
+</div>
+{% if a.kind == 'session' %}
+<form method="post" action="/analyses/{{ a.id }}/apply" class="card">
+  <h2 style="margin-top:0">Перенести в запись сессии</h2>
+  <p class="small muted">Отметьте поля, которые хотите взять. Отмеченные поля заменят текущие значения; потом их можно поправить на странице сессии. По умолчанию отмечены только пустые поля.</p>
+  <table>
+  <tr><th></th><th>Поле</th><th>Сейчас в записи</th><th>Предлагает разбор</th></tr>
+  <tr><td><input type="checkbox" name="take" value="synopsis" {% if result.synopsis and not a.session.synopsis %}checked{% endif %}></td>
+      <td>Синопсис</td><td class="small">{{ a.session.synopsis }}</td><td class="small">{{ result.synopsis }}</td></tr>
+  {% for key, label in SESSION_TEXT_FIELDS.items() %}{% set proposed = result.fields.get(key, '') %}
+  {% if proposed %}<tr><td><input type="checkbox" name="take" value="{{ key }}" {% if not a.session[key] %}checked{% endif %}></td>
+      <td>{{ label }}</td><td class="small">{{ a.session[key] }}</td><td class="small">{{ proposed }}</td></tr>{% endif %}
+  {% endfor %}
+  </table>
+  <p><button>Перенести выбранное</button></p>
+</form>
+{% endif %}
+<details class="card"><summary class="small">Исходный ответ модели</summary><pre class="export">{{ a.raw_text }}</pre></details>
+{% endif %}
+<form method="post" action="/analyses/{{ a.id }}/delete" class="noprint"><button class="danger">Удалить разбор</button></form>
+{% endblock %}

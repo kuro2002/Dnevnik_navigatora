@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_macros.html" import opt %}
+{% block content %}
+<h1>Новый клиент</h1>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post" action="/clients" class="card">
+  <div class="grid">
+    <div><label>Шифр (без имени и фамилии)</label><input type="text" name="code" placeholder="К-014" required></div>
+    <div><label>Тип</label><select name="client_type">{{ opt(CLIENT_TYPES, 'adult') }}</select></div>
+    <div><label>Статус</label><select name="status">{{ opt(CLIENT_STATUSES, 'active') }}</select></div>
+    <div><label>Дата начала работы</label><input type="date" name="started_on"></div>
+  </div>
+  <label>Контекст (личная терапия / кризис / долгосрочная работа)</label><textarea name="context"></textarea>
+  <label>Запрос клиента — его словами</label><textarea name="goal_words"></textarea>
+  <label>Перевод на язык процесса</label><textarea name="goal_process"></textarea>
+  <p class="small muted">Отдельные запросы родителя и подростка, партнёров и глубинный запрос можно добавить в карточке.</p>
+  <input type="hidden" name="phase" value="">
+  <p><button>Создать</button></p>
+</form>
+{% endblock %}

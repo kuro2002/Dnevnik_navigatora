@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% from "_macros.html" import opt, status_pill, dynamics_result %}
+{% block title %}{{ client.code }} — Дневник Навигатора{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between">
+  <h1>{{ client.code }} <span class="pill">{{ CLIENT_TYPES.get(client.client_type) }}</span>
+    <span class="pill">{{ CLIENT_STATUSES.get(client.status) }}</span></h1>
+  <div class="row">
+    <a class="btn" href="/clients/{{ client.id }}/sessions/new">+ Сессия</a>
+    <a class="btn ghost" href="/clients/{{ client.id }}/print">Для супервизии / PDF</a>
+  </div>
+</div>
+<nav class="tabs">
+  {% for key, label in [('overview','Карта клиента'),('sessions','Сессии ('~client.sessions|length|string~')'),('markers','Маркеры'),('timeline','Хронология'),('dynamics','Динамика')] %}
+  <a href="?tab={{ key }}" class="{% if tab == key %}on{% endif %}">{{ label }}</a>
+  {% endfor %}
+</nav>
+
+{% if tab == 'overview' %}
+<div class="cols">
+<div>
+  <h2>Запросы и цели</h2>
+  {% for g in client.goals %}
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><b>{{ WHO.get(g.who, g.who) }}</b>
+      <span class="pill {% if g.status == 'achieved' %}ok{% elif g.status == 'dropped' %}warn{% endif %}">{{ GOAL_STATUSES.get(g.status) }}</span></div>
+    <p>«{{ g.words }}»</p>
+    {% if g.process %}<p class="muted">На языке процесса: {{ g.process }}</p>{% endif %}
+    {% if g.review_on %}<p class="small muted">Пересмотр: {{ g.review_on|d }}</p>{% endif %}
+    <details><summary class="small">Изменить</summary>
+      <form method="post" action="/goals/{{ g.id }}/edit">
+        <label>Словами клиента</label><textarea name="words">{{ g.words }}</textarea>
+        <label>На языке процесса</label><textarea name="process">{{ g.process }}</textarea>
+        <div class="grid"><div><label>Статус</label><select name="status">{{ opt(GOAL_STATUSES, g.status) }}</select></div>
+        <div><label>Следующий пересмотр</label><input type="date" name="review_on" value="{{ g.review_on or '' }}"></div></div>
+        <label>Комментарий к изменению</label><input type="text" name="note" value="{{ g.note }}">
+        <p><button>Сохранить</button></p>
+      </form></details>
+  </div>
+  {% else %}<p class="muted">Целей пока нет.</p>{% endfor %}
+  <details class="card"><summary>+ Добавить запрос или цель</summary>
+    <form method="post" action="/clients/{{ client.id }}/goals">
+      <label>Чей запрос</label><select name="who">{{ opt(WHO, 'client') }}</select>
+      <label>Словами участника</label><textarea name="words" required></textarea>
+      <label>Перевод на язык процесса</label><textarea name="process"></textarea>
+      <label>Следующий пересмотр</label><input type="date" name="review_on">
+      <p><button>Добавить</button></p>
+    </form></details>
+
+  <h2>Рабочие гипотезы</h2>
+  <p class="small muted">Гипотеза допускает пересмотр — это не диагноз.</p>
+  {% for h in client.hypotheses %}
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><b>{{ h.text }}</b><span class="pill">{{ HYPOTHESIS_STATUSES.get(h.status) }}</span></div>
+    {% if h.grounds %}<p><span class="muted">Основания:</span> {{ h.grounds }}</p>{% endif %}
+    {% if h.contrary %}<p><span class="muted">Противоречит:</span> {{ h.contrary }}</p>{% endif %}
+    <details><summary class="small">Изменить</summary>
+      <form method="post" action="/hypotheses/{{ h.id }}/edit">
+        <label>Гипотеза</label><textarea name="text">{{ h.text }}</textarea>
+        <label>Основания / наблюдения</label><textarea name="grounds">{{ h.grounds }}</textarea>
+        <label>Противоречащие данные</label><textarea name="contrary">{{ h.contrary }}</textarea>
+        <label>Статус</label><select name="status">{{ opt(HYPOTHESIS_STATUSES, h.status) }}</select>
+        <p><button>Сохранить</button></p>
+      </form></details>
+  </div>
+  {% endfor %}
+  <details class="card"><summary>+ Добавить гипотезу</summary>
+    <form method="post" action="/clients/{{ client.id }}/hypotheses">
+      <label>Гипотеза</label><textarea name="text" required></textarea>
+      <label>Основания / наблюдения</label><textarea name="grounds"></textarea>
+      <p><button>Добавить</button></p>
+    </form></details>
+</div>
+
+<div>
+  <h2>Карточка</h2>
+  <form method="post" action="/clients/{{ client.id }}/edit" class="card">
+    <div class="grid">
+      <div><label>Тип</label><select name="client_type">{{ opt(CLIENT_TYPES, client.client_type) }}</select></div>
+      <div><label>Статус</label><select name="status">{{ opt(CLIENT_STATUSES, client.status) }}</select></div>
+      <div><label>Фаза работы</label><select name="phase">{{ opt(PHASES, client.phase) }}</select></div>
+      <div><label>Дата начала</label><input type="date" name="started_on" value="{{ client.started_on or '' }}"></div>
+    </div>
+    <label>Контекст</label><textarea name="context">{{ client.context }}</textarea>
+    <label>Контракт</label><textarea name="contract">{{ client.contract }}</textarea>
+    <label>Анкета / первичная беседа</label><textarea name="intake" style="min-height:140px">{{ client.intake }}</textarea>
+    {% if client.status in ('pause','finished','stopped','inquiry','booked') %}
+    <label>Известная причина паузы или прекращения (только со слов клиента)</label><textarea name="status_reason">{{ client.status_reason }}</textarea>
+    <label>Согласованный следующий контакт</label><input type="text" name="next_contact" value="{{ client.next_contact }}">
+    {% else %}<input type="hidden" name="status_reason" value="{{ client.status_reason }}"><input type="hidden" name="next_contact" value="{{ client.next_contact }}">{% endif %}
+    <label>Заметки</label><textarea name="notes">{{ client.notes }}</textarea>
+    <p><button>Сохранить карточку</button></p>
+  </form>
+  <details class="card noprint"><summary class="small">Удалить клиента</summary>
+    <form method="post" action="/clients/{{ client.id }}/delete">
+      <p class="small">Удалятся все сессии, разборы и аудио. Введите шифр <b>{{ client.code }}</b> для подтверждения.</p>
+      <input type="text" name="confirm"><p><button class="danger">Удалить навсегда</button></p>
+    </form></details>
+</div>
+</div>
+
+{% elif tab == 'sessions' %}
+<div class="card">
+{% if client.sessions %}
+<table><tr><th>№</th><th>Дата встречи</th><th>Методы</th><th>Фокус</th><th>Запись</th><th>Разборы</th></tr>
+{% for x in client.sessions|reverse %}
+<tr><td><a href="/sessions/{{ x.id }}">№{{ x.number }}</a></td><td>{{ x.session_date|d }}</td><td class="small">{{ x.method_labels }}</td>
+<td>{{ (x.focus or x.synopsis)[:140] }}</td><td>{{ status_pill(x.review_status) }}</td><td>{{ x.analyses|length }}</td></tr>
+{% endfor %}</table>
+{% else %}<p class="muted">Сессий пока нет. <a href="/clients/{{ client.id }}/sessions/new">Добавить первую</a>.</p>{% endif %}
+</div>
+
+{% elif tab == 'markers' %}
+{% for m in client.markers %}
+<div class="card">
+  <div class="row" style="justify-content:space-between"><h3 style="margin:0">{{ m.name }}</h3>
+    <span class="muted small">{{ m.how }}{% if m.lower_is_better %} · меньше — лучше{% endif %}{% if m.goal %} · цель: {{ m.goal.words[:60] }}{% endif %}</span></div>
+  {% if m.anchors %}<p class="small muted">Опорные значения: {{ m.anchors }}</p>{% endif %}
+  {% if m.measurements %}
+  <p>Старт: <b>{{ m.start.value|round(1) }}</b> ({{ m.start.measured_on|d }}) → сейчас: <b>{{ m.current.value|round(1) }}</b> ({{ m.current.measured_on|d }})</p>
+  {% set vals = m.measurements|map(attribute='value')|list %}{% set lo = vals|min %}{% set hi = vals|max %}{% set span = (hi - lo) or 1 %}
+  {% if vals|length > 1 %}
+  <svg viewBox="0 0 300 60" width="100%" height="60" preserveAspectRatio="none" role="img" aria-label="динамика маркера">
+    <polyline fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent)"
+      points="{% for v in vals %}{{ (loop.index0 * 300 / (vals|length - 1))|round(1) }},{{ (55 - (v - lo) * 50 / span)|round(1) }} {% endfor %}"/>
+  </svg>{% endif %}
+  <details><summary class="small">История замеров ({{ m.measurements|length }})</summary>
+  <table>{% for ms in m.measurements %}<tr><td>{{ ms.measured_on|d }}</td><td><b>{{ ms.value|round(1) }}</b></td><td class="small">{{ MEASURE_SOURCES.get(ms.source) }}</td><td class="small">{{ ms.comment }}</td>
+  <td><form method="post" action="/measurements/{{ ms.id }}/delete"><button class="ghost small">×</button></form></td></tr>{% endfor %}</table></details>
+  {% endif %}
+  <form method="post" action="/markers/{{ m.id }}/measure" class="row" style="margin-top:8px">
+    <input type="date" name="measured_on" value="{{ today }}" style="width:auto" required>
+    <input type="text" name="value" placeholder="значение" style="width:100px" required>
+    <select name="source" style="width:auto">{{ opt(MEASURE_SOURCES, 'client') }}</select>
+    <input type="text" name="comment" placeholder="комментарий / пример" style="flex:1;min-width:160px">
+    <button>Добавить замер</button>
+  </form>
+</div>
+{% else %}<p class="muted">Маркеров пока нет.</p>{% endfor %}
+<details class="card" {% if not client.markers %}open{% endif %}><summary>+ Добавить маркер</summary>
+  <form method="post" action="/clients/{{ client.id }}/markers">
+    <div class="grid">
+      <div><label>Что отслеживаем</label><input type="text" name="name" placeholder="Частота руминативных мыслей" required></div>
+      <div><label>Как измеряю</label><input type="text" name="how" value="шкала 0–10"></div>
+      <div><label>Связанная цель</label><select name="goal_id"><option value="">—</option>{% for g in client.goals %}<option value="{{ g.id }}">{{ g.words[:60] }}</option>{% endfor %}</select></div>
+    </div>
+    <label>Опорные значения шкалы (что значит 0, 5, 10)</label><input type="text" name="anchors">
+    <div class="checks" style="margin-top:8px"><label><input type="checkbox" name="lower_is_better" value="1"> меньше — лучше</label></div>
+    <div class="grid">
+      <div><label>Стартовое значение</label><input type="text" name="start_value"></div>
+      <div><label>Дата старта</label><input type="date" name="start_date"></div>
+      <div><label>Кто оценил</label><select name="source">{{ opt(MEASURE_SOURCES, 'client') }}</select></div>
+    </div>
+    <p class="small muted">Это рабочие индикаторы, а не диагностические тесты.</p>
+    <p><button>Добавить маркер</button></p>
+  </form></details>
+
+{% elif tab == 'timeline' %}
+<div class="card"><ul class="timeline">
+{% for it in timeline %}<li><span class="muted">{{ it.date|d }}</span> ·
+  {% if it.url %}<a href="{{ it.url }}">{{ it.text }}</a>{% else %}{{ it.text }}{% endif %}</li>
+{% else %}<li class="muted">Событий пока нет.</li>{% endfor %}
+</ul></div>
+
+{% elif tab == 'dynamics' %}
+<div class="card">
+  <p>Анализ динамики по трём направлениям: изменения в жизни клиента относительно целей, качество взаимодействия, действия психолога. Используются проверенные сессии (если их нет — все заполненные) и замеры маркеров.</p>
+  <div class="row">
+    {% for key, label in ANALYZERS.items() %}
+    <form method="post" action="/clients/{{ client.id }}/dynamics/{{ key }}"><button class="{% if key != 'ollama' %}ghost{% endif %}">{{ label }}</button></form>
+    {% endfor %}
+  </div>
+</div>
+{% for a in dynamics %}
+<div class="card">
+  <div class="row" style="justify-content:space-between"><b>{{ ANALYZERS.get(a.analyzer) }}{% if a.model %} · {{ a.model }}{% endif %}</b>
+    <span>{{ status_pill(a.status) }} <span class="small muted">{{ a.created_at|dt }}</span> <a class="small" href="/analyses/{{ a.id }}">открыть</a></span></div>
+  {% if a.status == 'done' and loop.first %}{{ dynamics_result(a.result_json|fromjson) }}{% elif a.status == 'done' %}<p class="small">{{ (a.result_json|fromjson).summary[:300] }}</p>{% endif %}
+  {% if a.error %}<div class="error">{{ a.error }}</div>{% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="stats">
+  <div class="stat"><b>{{ stats.active }}</b><span>в работе из {{ stats.clients }}</span></div>
+  <div class="stat"><b>{{ stats.sessions_month }}</b><span>сессий в этом месяце</span></div>
+  <div class="stat"><b>{{ stats.sessions }}</b><span>сессий всего</span></div>
+  <div class="stat"><b>{{ stats.analyzed }}</b><span>сессий с ИИ-разбором</span></div>
+  <div class="stat"><b>{{ stats.to_review }}</b><span>записей ждут проверки</span></div>
+</div>
+<div class="row" style="justify-content:space-between"><h1>Клиенты</h1><a class="btn" href="/clients/new">+ Новый клиент</a></div>
+<div class="card">
+{% if clients %}
+<table>
+<tr><th>Шифр</th><th>Тип</th><th>Статус</th><th>Фаза</th><th>Сессий</th><th>Последняя встреча</th></tr>
+{% for c in clients %}
+<tr>
+  <td><a href="/clients/{{ c.id }}"><b>{{ c.code }}</b></a></td>
+  <td>{{ CLIENT_TYPES.get(c.client_type, c.client_type) }}</td>
+  <td>{{ CLIENT_STATUSES.get(c.status, c.status) }}</td>
+  <td class="small">{{ PHASES.get(c.phase, c.phase) }}</td>
+  <td>{{ c.sessions|length }}</td>
+  <td>{% if c.sessions %}{{ c.sessions[-1].session_date|d }}{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+{% else %}<p class="muted">Пока нет клиентов. Добавьте первого — по шифру, без имени.</p>{% endif %}
+</div>
+{% endblock %}

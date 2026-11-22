@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/data
+    # Сайт слушает только адрес сервера в сети Tailscale.
+    # Подставьте свой адрес из `tailscale ip -4` (например, 100.101.102.103).
+    ports:
+      - "${TAILSCALE_IP:-127.0.0.1}:8000:8000"
+    restart: unless-stopped

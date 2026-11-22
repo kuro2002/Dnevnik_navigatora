@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "_macros.html" import opt, status_pill, session_result %}
+{% block title %}{{ client.code }} №{{ s.number }} — Дневник Навигатора{% endblock %}
+{% block content %}
+<p><a href="/clients/{{ client.id }}?tab=sessions">← {{ client.code }}</a></p>
+<div class="row" style="justify-content:space-between">
+  <h1>{{ client.code }} · сессия №{{ s.number }} · {{ s.session_date|d }}</h1>
+  <span>{{ status_pill(s.review_status) }} <span class="small muted">загружено {{ s.uploaded_at|dt }}</span></span>
+</div>
+
+<div class="card" id="analyses">
+  <h2 style="margin-top:0">ИИ-разборы</h2>
+  {% if not s.transcript.strip() %}<p class="muted">Разбор станет доступен, когда появится транскрипт.</p>
+  {% else %}
+  <div class="row">
+    {% for key, label in ANALYZERS.items() %}
+    <form method="post" action="/sessions/{{ s.id }}/analyze/{{ key }}"><button class="{% if key != 'ollama' %}ghost{% endif %}">{{ label }}</button></form>
+    {% endfor %}
+  </div>
+  <p class="small muted">Разборы — черновики. В запись попадает только то, что вы выберете и проверите.</p>
+  {% endif %}
+  {% if analyses %}
+  <div class="cols">
+  {% for a, r in analyses %}
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><b>{{ ANALYZERS.get(a.analyzer) }}</b>{{ status_pill(a.status) }}</div>
+      <p class="small muted">{{ a.model }} · {{ a.created_at|dt }}{% if a.applied %} · перенесён в запись{% endif %}</p>
+      {% if a.error %}<div class="error">{{ a.error }}</div>{% endif %}
+      {% if r %}{{ session_result(r, short=True) }}{% endif %}
+      <p class="row"><a class="btn ghost" href="/analyses/{{ a.id }}">{% if r %}Открыть и перенести поля{% elif a.analyzer == 'claude' %}Экспорт / вставить ответ{% else %}Открыть{% endif %}</a>
+      {% if a.status in ('queued','running') %}<a class="btn ghost" href="/sessions/{{ s.id }}#analyses">Обновить</a>{% endif %}</p>
+    </div>
+  {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<form method="post" action="/sessions/{{ s.id }}">
+<div class="cols">
+<div class="card">
+  <h2 style="margin-top:0">Запись сессии</h2>
+  <div class="grid">
+    <div><label>Дата встречи</label><input type="date" name="session_date" value="{{ s.session_date }}" required></div>
+    <div><label>Номер</label><input type="number" name="number" value="{{ s.number }}"></div>
+    <div><label>Длительность, мин</label><input type="number" name="duration_min" value="{{ s.duration_min or '' }}"></div>
+  </div>
+  <label>Методы</label>
+  <div class="checks">{% for k, v in METHODS.items() %}<label><input type="checkbox" name="methods" value="{{ k }}" {% if k in s.method_codes %}checked{% endif %}> {{ v }}</label>{% endfor %}</div>
+  <label>Синопсис</label><textarea name="synopsis">{{ s.synopsis }}</textarea>
+  {% for key, label in SESSION_TEXT_FIELDS.items() %}
+  <label>{{ label }}</label><textarea name="{{ key }}">{{ s[key] }}</textarea>
+  {% endfor %}
+</div>
+<div>
+  <div class="card">
+    <h2 style="margin-top:0">Для меня</h2>
+    <p class="small muted">Эти поля заполняете только вы, ИИ их не трогает.</p>
+    {% for key, label in SESSION_SELF_FIELDS.items() %}
+    <label>{{ label }}</label><textarea name="{{ key }}">{{ s[key] }}</textarea>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0">Маркеры</h2>
+    {% for m in client.markers %}
+      <p><b>{{ m.name }}</b>: {% if m.current %}{{ m.current.value|round(1) }} ({{ m.current.measured_on|d }}){% else %}<span class="muted">нет замеров</span>{% endif %}</p>
+    {% else %}<p class="muted small">Маркеров нет. <a href="/clients/{{ client.id }}?tab=markers">Добавить</a></p>{% endfor %}
+    {% if client.markers %}<p class="small"><a href="#measure">Записать замер с этой встречи ↓</a></p>{% endif %}
+  </div>
+  <div class="card">
+    <label>Статус записи</label><select name="review_status">{{ opt(REVIEW_STATUSES, s.review_status) }}</select>
+    <p class="row"><button>Сохранить</button></p>
+  </div>
+</div>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">Транскрипт</h2>
+  <textarea name="transcript" class="tall">{{ s.transcript }}</textarea>
+  <p class="row"><button>Сохранить</button></p>
+</div>
+</form>
+
+<div class="card">
+  <h2 style="margin-top:0">Аудио</h2>
+  {% for af in s.audio_files %}
+  <p>{{ af.filename }} · {{ TRANSCRIPTION_STATUSES.get(af.status) }}{% if af.error %} <span class="small muted">— {{ af.error }}</span>{% endif %}
+    {% if af.status in ('error','queued') %}<form method="post" action="/audio/{{ af.id }}/retry" style="display:inline"><button class="ghost small">Повторить сейчас</button></form>{% endif %}</p>
+  {% endfor %}
+  <form method="post" action="/sessions/{{ s.id }}/audio" enctype="multipart/form-data" class="row">
+    <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required><button class="ghost">Загрузить аудио</button>
+  </form>
+  <p class="small muted">Текст расшифровки добавится в конец транскрипта.</p>
+</div>
+
+{% if client.markers %}
+<div class="card" id="measure">
+  <h2 style="margin-top:0">Замер с этой встречи</h2>
+  {% for m in client.markers %}
+  <form method="post" action="/markers/{{ m.id }}/measure" class="row" style="margin-bottom:6px">
+    <b style="min-width:200px">{{ m.name }}</b>
+    <input type="hidden" name="measured_on" value="{{ s.session_date }}"><input type="hidden" name="session_id" value="{{ s.id }}">
+    <input type="hidden" name="next" value="/sessions/{{ s.id }}">
+    <input type="text" name="value" placeholder="значение" style="width:100px" required>
+    <select name="source" style="width:auto">{{ opt(MEASURE_SOURCES, 'client') }}</select>
+    <input type="text" name="comment" placeholder="пример из жизни клиента" style="flex:1;min-width:160px">
+    <button class="ghost">Записать</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+
+<details class="card noprint"><summary class="small">Удалить сессию</summary>
+  <form method="post" action="/sessions/{{ s.id }}/delete"><p><button class="danger">Удалить сессию со всеми разборами</button></p></form>
+</details>
+{% endblock %}

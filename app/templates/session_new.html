@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/clients/{{ client.id }}?tab=sessions">← {{ client.code }}</a></p>
+<h1>Новая сессия · {{ client.code }}</h1>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post" action="/clients/{{ client.id }}/sessions" enctype="multipart/form-data" class="card">
+  <div class="grid">
+    <div><label>Дата встречи (фактическая, не дата загрузки)</label><input type="date" name="session_date" required></div>
+    <div><label>Номер встречи</label><input type="number" name="number" value="{{ next_number }}" min="1"></div>
+    <div><label>Длительность, мин</label><input type="number" name="duration_min" value="90"></div>
+  </div>
+  <label>Методы</label>
+  <div class="checks">{% for k, v in METHODS.items() %}<label><input type="checkbox" name="methods" value="{{ k }}"> {{ v }}</label>{% endfor %}</div>
+  <label>Короткая рефлексия после встречи</label>
+  <textarea name="reflection" placeholder="Мне показалось, что я торопилась предложить решение. Хочу отдельно посмотреть этот момент."></textarea>
+  <h3>Материал сессии</h3>
+  <label>Аудио (будет расшифровано на компьютере с audio.cpp)</label><input type="file" name="audio" accept="audio/*,video/mp4,video/webm">
+  <label>или файл транскрипта (.txt)</label><input type="file" name="transcript_file" accept=".txt,text/plain">
+  <label>или вставьте транскрипт</label><textarea name="transcript" class="tall"></textarea>
+  <p><button>Сохранить сессию</button></p>
+</form>
+{% endblock %}
