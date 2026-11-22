@@ -8,6 +8,22 @@
   <span>{{ status_pill(s.review_status) }} <span class="small muted">загружено {{ s.uploaded_at|dt }}</span></span>
 </div>
 
+{% set pending = s.audio_files|selectattr('status','in',['queued','running'])|list %}
+{% if pending %}<div class="note">Аудио расшифровывается{% for af in pending %}{% if af.error %} — {{ af.error }}{% endif %}{% endfor %}. Текст появится в транскрипте; обновите страницу через несколько минут.</div>{% endif %}
+{% if not s.transcript.strip() %}
+<div class="card" id="audio">
+  <h2 style="margin-top:0">Аудиозапись сессии</h2>
+  <p class="small muted">mp3, m4a, ogg, opus, wav, flac, webm, mp4. Расшифровка добавится в транскрипт.</p>
+  {% for af in s.audio_files %}
+  <p>{{ af.filename }} · {{ TRANSCRIPTION_STATUSES.get(af.status) }}{% if af.error %} <span class="small muted">— {{ af.error }}</span>{% endif %}
+    {% if af.status in ('error','queued') %}<form method="post" action="/audio/{{ af.id }}/retry" style="display:inline"><button class="ghost small">Повторить сейчас</button></form>{% endif %}</p>
+  {% endfor %}
+  <form method="post" action="/sessions/{{ s.id }}/audio" enctype="multipart/form-data" class="row">
+    <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required><button class="ghost">Загрузить аудио</button>
+  </form>
+</div>
+
+{% endif %}
 <div class="card" id="analyses">
   <h2 style="margin-top:0">ИИ-разборы</h2>
   {% if not s.transcript.strip() %}<p class="muted">Разбор станет доступен, когда появится транскрипт.</p>
@@ -79,18 +95,6 @@
 </div>
 </form>
 
-<div class="card">
-  <h2 style="margin-top:0">Аудио</h2>
-  {% for af in s.audio_files %}
-  <p>{{ af.filename }} · {{ TRANSCRIPTION_STATUSES.get(af.status) }}{% if af.error %} <span class="small muted">— {{ af.error }}</span>{% endif %}
-    {% if af.status in ('error','queued') %}<form method="post" action="/audio/{{ af.id }}/retry" style="display:inline"><button class="ghost small">Повторить сейчас</button></form>{% endif %}</p>
-  {% endfor %}
-  <form method="post" action="/sessions/{{ s.id }}/audio" enctype="multipart/form-data" class="row">
-    <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required><button class="ghost">Загрузить аудио</button>
-  </form>
-  <p class="small muted">Текст расшифровки добавится в конец транскрипта.</p>
-</div>
-
 {% if client.markers %}
 <div class="card" id="measure">
   <h2 style="margin-top:0">Замер с этой встречи</h2>
@@ -108,6 +112,20 @@
 </div>
 {% endif %}
 
+{% if s.transcript.strip() %}
+<div class="card" id="audio">
+  <h2 style="margin-top:0">Аудиозапись сессии</h2>
+  <p class="small muted">mp3, m4a, ogg, opus, wav, flac, webm, mp4. Расшифровка добавится в транскрипт.</p>
+  {% for af in s.audio_files %}
+  <p>{{ af.filename }} · {{ TRANSCRIPTION_STATUSES.get(af.status) }}{% if af.error %} <span class="small muted">— {{ af.error }}</span>{% endif %}
+    {% if af.status in ('error','queued') %}<form method="post" action="/audio/{{ af.id }}/retry" style="display:inline"><button class="ghost small">Повторить сейчас</button></form>{% endif %}</p>
+  {% endfor %}
+  <form method="post" action="/sessions/{{ s.id }}/audio" enctype="multipart/form-data" class="row">
+    <input type="file" name="audio" accept="audio/*,video/mp4,video/webm" required><button class="ghost">Загрузить аудио</button>
+  </form>
+</div>
+
+{% endif %}
 <details class="card noprint"><summary class="small">Удалить сессию</summary>
   <form method="post" action="/sessions/{{ s.id }}/delete"><p><button class="danger">Удалить сессию со всеми разборами</button></p></form>
 </details>

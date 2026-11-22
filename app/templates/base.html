@@ -9,7 +9,8 @@
 <body>
 <header class="top">
   <a class="brand" href="/">Дневник Навигатора</a>
-  <nav><a href="/">Клиенты</a><a href="/clients/new">+ Клиент</a></nav>
+  {% if request.session.get('auth') %}<nav><a href="/">Клиенты</a><a href="/clients/new">+ Клиент</a></nav>
+  <a class="btn" href="/upload">Загрузить запись</a>{% endif %}
   {% if request.session.get('auth') %}<form method="post" action="/logout"><button class="ghost">Выйти</button></form>{% endif %}
 </header>
 <main>{% block content %}{% endblock %}</main>

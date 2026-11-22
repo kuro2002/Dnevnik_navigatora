@@ -192,3 +192,40 @@ def test_delete_client_needs_code(client):
     assert client.post(f"/clients/{cid}/delete", data={"confirm": "нет"}).status_code == 400
     client.post(f"/clients/{cid}/delete", data={"confirm": "К-014"})
     assert client.get(f"/clients/{cid}").status_code == 404
+
+
+def test_upload_page_single_form(client, monkeypatch):
+    cid = make_client(client)
+    page = client.get("/upload").text
+    assert "Загрузить запись сессии" in page and "К-014" in page
+    assert 'href="/upload"' in client.get("/").text
+    assert f'/upload?client_id={cid}' in client.get(f"/clients/{cid}").text
+    # без клиента — понятная ошибка
+    assert "Выберите клиента" in client.post("/upload", data={"session_date": "2026-09-21"}).text
+    calls = []
+    orig = jobs.run_transcription
+    monkeypatch.setattr(jobs, "run_transcription",
+                        lambda aid: orig(aid, transcriber=lambda p: calls.append(p) or "Клиент: текст речи"))
+    r = client.post("/upload", data={"client_id": str(cid), "session_date": "2026-09-21"},
+                    files={"recording": ("Запись.m4a", b"....", "audio/mp4")}, follow_redirects=False)
+    assert r.status_code == 303
+    sid = int(r.headers["location"].rsplit("/", 1)[1])
+    assert calls and "текст речи" in client.get(f"/sessions/{sid}").text
+
+
+def test_upload_txt_goes_to_transcript_and_bad_ext_rejected(client):
+    cid = make_client(client)
+    r = client.post("/upload", data={"client_id": str(cid), "session_date": "2026-09-21"},
+                    files={"recording": ("t.txt", "Психолог: привет".encode(), "text/plain")},
+                    follow_redirects=False)
+    sid = int(r.headers["location"].rsplit("/", 1)[1])
+    assert "Психолог: привет" in client.get(f"/sessions/{sid}").text
+    bad = client.post("/upload", data={"client_id": str(cid), "session_date": "2026-09-22"},
+                      files={"recording": ("x.docx", b"PK", "application/octet-stream")})
+    assert "не похож на аудио" in bad.text
+
+
+def test_old_new_session_link_redirects(client):
+    cid = make_client(client)
+    r = client.get(f"/clients/{cid}/sessions/new", follow_redirects=False)
+    assert r.headers["location"] == f"/upload?client_id={cid}"

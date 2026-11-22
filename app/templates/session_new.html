@@ -1,22 +1,72 @@
 {% extends "base.html" %}
+{% block title %}Загрузить запись сессии — Дневник Навигатора{% endblock %}
 {% block content %}
-<p><a href="/clients/{{ client.id }}?tab=sessions">← {{ client.code }}</a></p>
-<h1>Новая сессия · {{ client.code }}</h1>
+{% if client %}<p><a href="/clients/{{ client.id }}?tab=sessions">← {{ client.code }}</a></p>{% endif %}
+<h1>Загрузить запись сессии</h1>
+<p class="muted">Три шага: клиент, дата встречи, файл. Аудио расшифруется автоматически, текст появится в сессии.</p>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
-<form method="post" action="/clients/{{ client.id }}/sessions" enctype="multipart/form-data" class="card">
-  <div class="grid">
-    <div><label>Дата встречи (фактическая, не дата загрузки)</label><input type="date" name="session_date" required></div>
-    <div><label>Номер встречи</label><input type="number" name="number" value="{{ next_number }}" min="1"></div>
-    <div><label>Длительность, мин</label><input type="number" name="duration_min" value="90"></div>
+<form method="post" action="/upload" enctype="multipart/form-data" class="card upload-form">
+
+  <div class="step">
+    <span class="step-n">1</span>
+    <div class="step-body">
+      <label for="client_id">Клиент</label>
+      {% if clients %}
+      <select name="client_id" id="client_id" required>
+        <option value="">— выберите шифр —</option>
+        {% for c in clients %}<option value="{{ c.id }}" {% if client and c.id == client.id %}selected{% endif %}>{{ c.code }}</option>{% endfor %}
+      </select>
+      <p class="small muted">Нет в списке? <a href="/clients/new">Создайте клиента</a>, потом вернитесь сюда.</p>
+      {% else %}
+      <p>Клиентов пока нет. <a class="btn" href="/clients/new">Создать клиента</a></p>
+      {% endif %}
+    </div>
   </div>
-  <label>Методы</label>
-  <div class="checks">{% for k, v in METHODS.items() %}<label><input type="checkbox" name="methods" value="{{ k }}"> {{ v }}</label>{% endfor %}</div>
-  <label>Короткая рефлексия после встречи</label>
-  <textarea name="reflection" placeholder="Мне показалось, что я торопилась предложить решение. Хочу отдельно посмотреть этот момент."></textarea>
-  <h3>Материал сессии</h3>
-  <label>Аудио (будет расшифровано на компьютере с audio.cpp)</label><input type="file" name="audio" accept="audio/*,video/mp4,video/webm">
-  <label>или файл транскрипта (.txt)</label><input type="file" name="transcript_file" accept=".txt,text/plain">
-  <label>или вставьте транскрипт</label><textarea name="transcript" class="tall"></textarea>
-  <p><button>Сохранить сессию</button></p>
+
+  <div class="step">
+    <span class="step-n">2</span>
+    <div class="step-body">
+      <label for="session_date">Дата встречи — когда была сессия, а не сегодняшняя</label>
+      <input type="date" name="session_date" id="session_date" value="{{ form.get('session_date', '') }}" required style="max-width:220px">
+    </div>
+  </div>
+
+  <div class="step">
+    <span class="step-n">3</span>
+    <div class="step-body">
+      <label for="recording">Файл записи</label>
+      <label class="dropzone" for="recording">
+        <input type="file" name="recording" id="recording" multiple
+               accept="audio/*,video/mp4,video/webm,.ogg,.opus,.m4a,.mp3,.wav,.flac,.txt">
+        <b>Нажмите, чтобы выбрать файл</b>
+        <span class="small muted">Аудио: mp3, m4a, ogg, opus, wav, flac, webm, mp4 — будет расшифровано.<br>
+        Или готовая расшифровка в .txt.</span>
+        <span class="small" id="picked"></span>
+      </label>
+      <details style="margin-top:8px"><summary class="small">Вставить текст расшифровки вручную</summary>
+        <textarea name="transcript" class="tall">{{ form.get('transcript', '') }}</textarea>
+      </details>
+    </div>
+  </div>
+
+  <details class="step-extra">
+    <summary>Дополнительно: методы, рефлексия, номер встречи</summary>
+    <label>Методы</label>
+    <div class="checks">{% for k, v in METHODS.items() %}<label><input type="checkbox" name="methods" value="{{ k }}"> {{ v }}</label>{% endfor %}</div>
+    <label>Короткая рефлексия после встречи</label>
+    <textarea name="reflection" placeholder="Мне показалось, что я торопилась предложить решение. Хочу отдельно посмотреть этот момент.">{{ form.get('reflection', '') }}</textarea>
+    <div class="grid">
+      <div><label>Номер встречи</label><input type="number" name="number" min="1" value="{{ next_number or '' }}" placeholder="по порядку"></div>
+      <div><label>Длительность, мин</label><input type="number" name="duration_min" value="90"></div>
+    </div>
+  </details>
+
+  <p><button class="big">Загрузить</button></p>
 </form>
+<script>
+document.getElementById('recording').addEventListener('change', function () {
+  var names = Array.prototype.map.call(this.files, function (f) { return f.name; });
+  document.getElementById('picked').textContent = names.length ? 'Выбрано: ' + names.join(', ') : '';
+});
+</script>
 {% endblock %}

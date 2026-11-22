@@ -264,29 +264,58 @@ def measurement_delete(msid: int, db: DB = Depends(get_db)):
 
 # --- Сессии ------------------------------------------------------------------
 
+TEXT_EXT = {".txt", ".md", ".srt", ".vtt"}
+
+
+def _next_number(c: Client) -> int:
+    return max([x.number for x in c.sessions], default=0) + 1
+
+
+def _upload_ctx(db: DB, client: Client | None, error=None, form=None):
+    clients = db.scalars(select(Client).order_by(Client.code)).all()
+    return dict(client=client, clients=clients, error=error, form=form or {},
+                next_number=_next_number(client) if client else None)
+
+
+@router.get("/upload")
+def upload_page(request: Request, client_id: int | None = None, db: DB = Depends(get_db)):
+    """Единая страница «Загрузить запись сессии»: клиент, дата, файл."""
+    c = db.get(Client, client_id) if client_id else None
+    return render(request, "session_new.html", **_upload_ctx(db, c))
+
+
 @router.get("/clients/{cid}/sessions/new")
-def session_new(cid: int, request: Request, db: DB = Depends(get_db)):
-    c = get_or_404(db, Client, cid)
-    next_number = max([x.number for x in c.sessions], default=0) + 1
-    return render(request, "session_new.html", client=c, next_number=next_number, error=None)
+def session_new(cid: int, db: DB = Depends(get_db)):
+    get_or_404(db, Client, cid)
+    return back(f"/upload?client_id={cid}")
 
 
-@router.post("/clients/{cid}/sessions")
-async def session_create(cid: int, request: Request, background: BackgroundTasks,
-                         db: DB = Depends(get_db)):
-    c = get_or_404(db, Client, cid)
+async def _create_session(request: Request, background: BackgroundTasks, db: DB, c: Client | None):
     form = await request.form()
-    next_number = max([x.number for x in c.sessions], default=0) + 1
+    if c is None:
+        return render(request, "session_new.html",
+                      **_upload_ctx(db, None, "Выберите клиента (шифр).", form))
     if not s(form, "session_date"):
-        return render(request, "session_new.html", client=c, next_number=next_number,
-                      error="Укажите дату встречи — она не подставляется автоматически.")
+        return render(request, "session_new.html", **_upload_ctx(
+            db, c, "Укажите дату встречи — она не подставляется автоматически.", form))
     transcript = s(form, "transcript")
-    tfile = form.get("transcript_file")
-    if tfile is not None and getattr(tfile, "filename", ""):
-        raw = await tfile.read()
-        transcript = (transcript + "\n\n" if transcript else "") + raw.decode("utf-8", errors="replace")
-    number = int(s(form, "number") or next_number)
-    ses = Session(client_id=cid, number=number, session_date=parse_date(form.get("session_date"), True),
+    audio_uploads = []
+    for key in ("recording", "audio", "transcript_file"):
+        for up in form.getlist(key):
+            if not getattr(up, "filename", ""):
+                continue
+            ext = Path(up.filename).suffix.lower()
+            if ext in TEXT_EXT:
+                raw = await up.read()
+                transcript = (transcript + "\n\n" if transcript else "") + raw.decode("utf-8", errors="replace")
+            elif ext in AUDIO_EXT:
+                audio_uploads.append(up)
+            else:
+                return render(request, "session_new.html", **_upload_ctx(
+                    db, c, f"Файл «{up.filename}» не похож на аудио или текст. "
+                           "Подходят: mp3, m4a, ogg, opus, wav, flac, webm, mp4 или .txt.", form))
+    number = int(s(form, "number") or _next_number(c))
+    ses = Session(client_id=c.id, number=number, session_date=parse_date(form.get("session_date"), True),
                   duration_min=int(s(form, "duration_min")) if s(form, "duration_min") else None,
                   methods=",".join(m for m in form.getlist("methods") if m in METHODS),
                   transcript=transcript, reflection=s(form, "reflection"))
@@ -295,19 +324,30 @@ async def session_create(cid: int, request: Request, background: BackgroundTasks
         db.flush()
     except IntegrityError:
         db.rollback()
-        return render(request, "session_new.html", client=c, next_number=next_number,
-                      error=f"Сессия №{number} у {c.code} уже есть")
-    audio = form.get("audio")
-    audio_id = None
-    if audio is not None and getattr(audio, "filename", ""):
-        audio_id = await _store_audio(db, ses, audio)
+        return render(request, "session_new.html", **_upload_ctx(
+            db, c, f"Сессия №{number} у {c.code} уже есть. Поменяйте номер.", form))
+    audio_ids = [await _store_audio(db, ses, up) for up in audio_uploads]
     if c.status in ("inquiry", "booked"):
         c.status = "active"
         log_event(db, c, "status", "Статус: В работе", ses.session_date)
     db.commit()
-    if audio_id:
-        background.add_task(jobs.run_transcription, audio_id)
+    for aid in audio_ids:
+        background.add_task(jobs.run_transcription, aid)
     return back(f"/sessions/{ses.id}")
+
+
+@router.post("/upload")
+async def upload_submit(request: Request, background: BackgroundTasks, db: DB = Depends(get_db)):
+    form = await request.form()
+    cid = s(form, "client_id")
+    c = db.get(Client, int(cid)) if cid.isdigit() else None
+    return await _create_session(request, background, db, c)
+
+
+@router.post("/clients/{cid}/sessions")
+async def session_create(cid: int, request: Request, background: BackgroundTasks,
+                         db: DB = Depends(get_db)):
+    return await _create_session(request, background, db, get_or_404(db, Client, cid))
 
 
 async def _store_audio(db: DB, ses: Session, upload) -> int:
