@@ -9,7 +9,9 @@
 </div>
 
 {% set pending = s.audio_files|selectattr('status','in',['queued','running'])|list %}
-{% if pending %}<div class="note">Аудио расшифровывается{% for af in pending %}{% if af.error %} — {{ af.error }}{% endif %}{% endfor %}. Текст появится в транскрипте; обновите страницу через несколько минут.</div>{% endif %}
+{% if flash %}<div class="error">{{ flash }}</div>{% endif %}
+{% if pending %}<div class="note">Аудио расшифровывается{% for af in pending %}{% if af.error %} — {{ af.error }}{% endif %}{% endfor %}. Страница обновится сама, когда текст будет готов. Поле транскрипта пока заблокировано.</div>{% endif %}
+<div class="note" id="fresh" hidden>Расшифровка или разбор готовы. Сохраните свои изменения — новый текст не затрётся — и <a href="">обновите страницу</a>.</div>
 {% if not s.transcript.strip() %}
 <div class="card" id="audio">
   <h2 style="margin-top:0">Аудиозапись сессии</h2>
@@ -51,7 +53,8 @@
   {% endif %}
 </div>
 
-<form method="post" action="/sessions/{{ s.id }}">
+<form method="post" action="/sessions/{{ s.id }}" id="session-form">
+<input type="hidden" name="_orig" value="{{ orig }}">
 <div class="cols">
 <div class="card">
   <h2 style="margin-top:0">Запись сессии</h2>
@@ -90,7 +93,7 @@
 </div>
 <div class="card">
   <h2 style="margin-top:0">Транскрипт</h2>
-  <textarea name="transcript" class="tall">{{ s.transcript }}</textarea>
+  <textarea name="transcript" class="tall" {% if pending %}readonly title="Идёт расшифровка — поле откроется, когда текст будет готов"{% endif %}>{{ s.transcript }}</textarea>
   <p class="row"><button>Сохранить</button></p>
 </div>
 </form>
@@ -129,4 +132,27 @@
 <details class="card noprint"><summary class="small">Удалить сессию</summary>
   <form method="post" action="/sessions/{{ s.id }}/delete"><p><button class="danger">Удалить сессию со всеми разборами</button></p></form>
 </details>
+{% if status.pending_audio or status.pending_analyses %}
+<script>
+(function () {
+  var version = {{ status.version|tojson }}, dirty = false;
+  var form = document.getElementById('session-form');
+  form.addEventListener('input', function () { dirty = true; });
+  form.addEventListener('submit', function () { dirty = false; });
+  function poll() {
+    fetch('/sessions/{{ s.id }}/status', {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (st) {
+        if (st.version !== version) {
+          if (!dirty) { location.reload(); return; }
+          document.getElementById('fresh').hidden = false;
+        }
+        if (st.pending_audio || st.pending_analyses || st.version === version) setTimeout(poll, 10000);
+      })
+      .catch(function () { setTimeout(poll, 30000); });
+  }
+  setTimeout(poll, 10000);
+})();
+</script>
+{% endif %}
 {% endblock %}

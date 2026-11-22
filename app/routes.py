@@ -1,6 +1,7 @@
 """Страницы сайта: клиенты, цели, гипотезы, маркеры, сессии, разборы."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid
@@ -368,26 +369,83 @@ async def _store_audio(db: DB, ses: Session, upload) -> int:
 def session_view(sid: int, request: Request, db: DB = Depends(get_db)):
     ses = get_or_404(db, Session, sid)
     analyses = [(a, json.loads(a.result_json) if a.result_json else None) for a in ses.analyses]
-    return render(request, "session.html", s=ses, client=ses.client, analyses=analyses)
+    flash = request.session.pop("flash", None)
+    return render(request, "session.html", s=ses, client=ses.client, analyses=analyses,
+                  orig=json.dumps(field_hashes(ses)), flash=flash, status=session_status(ses))
+
+
+EDITABLE_FIELDS = ("synopsis", "transcript", *SESSION_TEXT_FIELDS, *SESSION_SELF_FIELDS)
+FIELD_LABELS = {"synopsis": "Синопсис", "transcript": "Транскрипт",
+                **SESSION_TEXT_FIELDS, **SESSION_SELF_FIELDS}
+CONFLICT_MARK = "\n\n===== Ваша правка, сделанная поверх устаревшей версии страницы =====\n"
+
+
+def norm_text(v) -> str:
+    return str(v or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def text_hash(v) -> str:
+    return hashlib.sha256(norm_text(v).encode("utf-8")).hexdigest()[:16]
+
+
+def field_hashes(ses: Session) -> dict:
+    """Отпечатки полей на момент открытия страницы — чтобы сохранение не затирало
+    то, что успело измениться в фоне (расшифровка, перенос из разбора)."""
+    return {k: text_hash(getattr(ses, k)) for k in EDITABLE_FIELDS}
+
+
+def session_status(ses: Session) -> dict:
+    pending_audio = sum(1 for a in ses.audio_files if a.status in ("queued", "running"))
+    pending_analyses = sum(1 for a in ses.analyses if a.status in ("queued", "running"))
+    version = text_hash("|".join([text_hash(ses.transcript)]
+                                 + [f"{a.id}:{a.status}" for a in ses.audio_files]
+                                 + [f"{a.id}:{a.status}" for a in ses.analyses]))
+    return {"pending_audio": pending_audio, "pending_analyses": pending_analyses, "version": version}
+
+
+@router.get("/sessions/{sid}/status")
+def session_status_api(sid: int, db: DB = Depends(get_db)):
+    return session_status(get_or_404(db, Session, sid))
 
 
 @router.post("/sessions/{sid}")
 async def session_save(sid: int, request: Request, db: DB = Depends(get_db)):
     ses = get_or_404(db, Session, sid)
     form = await request.form()
+    try:
+        orig = json.loads(str(form.get("_orig") or "{}"))
+    except json.JSONDecodeError:
+        orig = {}
     ses.session_date = parse_date(form.get("session_date"), required=True)
     ses.number = int(s(form, "number") or ses.number)
     ses.duration_min = int(s(form, "duration_min")) if s(form, "duration_min") else None
     ses.methods = ",".join(m for m in form.getlist("methods") if m in METHODS)
-    for key in ("synopsis", "transcript", *SESSION_TEXT_FIELDS, *SESSION_SELF_FIELDS):
-        if key in form:
-            setattr(ses, key, s(form, key))
+    conflicts = []
+    for key in EDITABLE_FIELDS:
+        if key not in form:
+            continue
+        new, current = norm_text(form.get(key)), getattr(ses, key)
+        new_h, cur_h, base_h = text_hash(new), text_hash(current), orig.get(key)
+        if new_h == cur_h:
+            continue
+        if base_h is None or cur_h == base_h:
+            setattr(ses, key, new)          # обычная правка: в базе ничего не менялось
+        elif new_h == base_h:
+            continue                        # вы поле не трогали, а в базе оно обновилось — оставляем базу
+        else:                               # изменилось и там, и там — сохраняем оба варианта
+            setattr(ses, key, norm_text(current) + CONFLICT_MARK + new)
+            conflicts.append(FIELD_LABELS[key])
     ses.review_status = s(form, "review_status") or ses.review_status
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(400, "Сессия с таким номером у клиента уже есть")
+    if conflicts:
+        request.session["flash"] = (
+            "Пока страница была открыта, эти поля обновились: " + ", ".join(conflicts)
+            + ". Ничего не потеряно: в поле сначала новая версия, ниже — ваша правка "
+              "под чертой «Ваша правка…». Соберите итоговый текст и сохраните ещё раз.")
     return back(f"/sessions/{sid}")
 
 

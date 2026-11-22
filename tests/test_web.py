@@ -229,3 +229,78 @@ def test_old_new_session_link_redirects(client):
     cid = make_client(client)
     r = client.get(f"/clients/{cid}/sessions/new", follow_redirects=False)
     assert r.headers["location"] == f"/upload?client_id={cid}"
+
+
+def _orig_from_page(html):
+    import html as h
+    import re
+    return h.unescape(re.search(r'name="_orig" value="([^"]*)"', html).group(1))
+
+
+def test_stale_page_does_not_erase_new_transcript(client):
+    """Повтор бага: страница открыта до окончания расшифровки, потом «Сохранить»."""
+    cid = make_client(client)
+    sid = make_session(client, cid, transcript="")
+    orig = _orig_from_page(client.get(f"/sessions/{sid}").text)
+    from app.db import SessionLocal
+    from app.models import Session
+    with SessionLocal() as db:  # фоновая расшифровка дописала текст
+        db.get(Session, sid).transcript = "Клиент: длинная расшифровка"
+        db.commit()
+    client.post(f"/sessions/{sid}", data={"_orig": orig, "session_date": "2026-09-21", "number": "1",
+                                          "transcript": "", "focus": "Новый фокус\r\n"})
+    with SessionLocal() as db:
+        s = db.get(Session, sid)
+        assert s.transcript == "Клиент: длинная расшифровка"
+        assert s.focus == "Новый фокус"
+    assert "Пока страница была открыта" not in client.get(f"/sessions/{sid}").text
+
+
+def test_both_changed_keeps_both_and_warns(client):
+    cid = make_client(client)
+    sid = make_session(client, cid, transcript="старый")
+    orig = _orig_from_page(client.get(f"/sessions/{sid}").text)
+    from app.db import SessionLocal
+    from app.models import Session
+    with SessionLocal() as db:
+        db.get(Session, sid).transcript = "старый\n\nновая расшифровка"
+        db.commit()
+    page = client.post(f"/sessions/{sid}", data={"_orig": orig, "session_date": "2026-09-21",
+                                                 "transcript": "старый с моей правкой"}).text
+    with SessionLocal() as db:
+        t = db.get(Session, sid).transcript
+    assert "новая расшифровка" in t and "старый с моей правкой" in t and "Ваша правка" in t
+    assert "Пока страница была открыта" in page and "Транскрипт" in page
+    # предупреждение показывается один раз
+    assert "Пока страница была открыта" not in client.get(f"/sessions/{sid}").text
+
+
+def test_normal_edit_still_saves(client):
+    cid = make_client(client)
+    sid = make_session(client, cid)
+    orig = _orig_from_page(client.get(f"/sessions/{sid}").text)
+    client.post(f"/sessions/{sid}", data={"_orig": orig, "session_date": "2026-09-21",
+                                          "transcript": "исправленный текст", "reflection": "заметка"})
+    from app.db import SessionLocal
+    from app.models import Session
+    with SessionLocal() as db:
+        s = db.get(Session, sid)
+        assert s.transcript == "исправленный текст" and s.reflection == "заметка"
+
+
+def test_transcript_locked_and_status_while_audio_pending(client, monkeypatch):
+    from app.transcription import TranscriberUnavailable
+    cid = make_client(client)
+
+    def offline(path):
+        raise TranscriberUnavailable("недоступен")
+    orig = jobs.run_transcription
+    monkeypatch.setattr(jobs, "run_transcription", lambda aid: orig(aid, transcriber=offline))
+    r = client.post("/upload", data={"client_id": str(cid), "session_date": "2026-09-21"},
+                    files={"recording": ("a.m4a", b"..", "audio/mp4")}, follow_redirects=False)
+    sid = int(r.headers["location"].rsplit("/", 1)[1])
+    page = client.get(f"/sessions/{sid}").text
+    assert 'name="transcript" class="tall" readonly' in page
+    assert f"/sessions/{sid}/status" in page
+    st = client.get(f"/sessions/{sid}/status").json()
+    assert st["pending_audio"] == 1 and st["version"]
