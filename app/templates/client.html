@@ -6,7 +6,7 @@
   <h1>{{ client.code }} <span class="pill">{{ CLIENT_TYPES.get(client.client_type) }}</span>
     <span class="pill">{{ CLIENT_STATUSES.get(client.status) }}</span></h1>
   <div class="row">
-    <a class="btn" href="/clients/{{ client.id }}/sessions/new">+ Сессия</a>
+    <a class="btn" href="/upload?client_id={{ client.id }}">Загрузить запись сессии</a>
     <a class="btn ghost" href="/clients/{{ client.id }}/print">Для супервизии / PDF</a>
   </div>
 </div>
@@ -107,7 +107,7 @@
 <tr><td><a href="/sessions/{{ x.id }}">№{{ x.number }}</a></td><td>{{ x.session_date|d }}</td><td class="small">{{ x.method_labels }}</td>
 <td>{{ (x.focus or x.synopsis)[:140] }}</td><td>{{ status_pill(x.review_status) }}</td><td>{{ x.analyses|length }}</td></tr>
 {% endfor %}</table>
-{% else %}<p class="muted">Сессий пока нет. <a href="/clients/{{ client.id }}/sessions/new">Добавить первую</a>.</p>{% endif %}
+{% else %}<p class="muted">Сессий пока нет. <a href="/upload?client_id={{ client.id }}">Загрузить запись первой сессии</a>.</p>{% endif %}
 </div>
 
 {% elif tab == 'markers' %}

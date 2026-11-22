@@ -40,3 +40,13 @@ details>summary{cursor:pointer;color:var(--accent)}
 pre.export{white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);padding:10px;border-radius:7px;font-size:12px}
 .timeline li{margin:4px 0}
 @media print{header.top,.noprint{display:none!important}body{background:#fff;color:#000}.card{border:none;padding:0}main{max-width:none}}
+.step{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.step-n{flex:none;width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--card);display:flex;align-items:center;justify-content:center;font-weight:600}
+.step-body{flex:1;min-width:0}.step-body>label:first-child{margin-top:4px;font-size:15px;color:var(--ink);font-weight:500}
+.step-extra{padding:12px 0}
+.dropzone{display:flex!important;flex-direction:column;gap:4px;align-items:center;text-align:center;border:2px dashed var(--accent);border-radius:10px;padding:22px 14px;background:var(--accent-soft);cursor:pointer;color:var(--ink)!important;margin:6px 0 0!important}
+.dropzone input[type=file]{max-width:100%}
+button.big,.btn.big{padding:11px 22px;font-size:16px;font-weight:500}
+.upload-cta{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-color:var(--accent);background:var(--accent-soft)}
+.upload-cta p{margin:2px 0 0}
+@media (max-width:640px){header.top{flex-wrap:wrap;gap:8px 12px;padding:8px 16px}header.top nav{order:3;flex-basis:100%}header.top .brand{flex:1}header.top .btn,header.top button{padding:5px 10px;font-size:14px}}
